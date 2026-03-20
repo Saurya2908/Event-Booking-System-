@@ -1,0 +1,31 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Build / temp
+dist/
+build/
+
+# MySQL dump backups (optional)
+*.sql.bak
+
+# Coverage
+coverage/
+
+# Optional: ignore local config overrides
+config/local.js

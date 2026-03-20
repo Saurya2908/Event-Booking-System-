@@ -1,0 +1,196 @@
+openapi: 3.0.0
+info:
+  title: Event Booking System API
+  version: 1.0.0
+  description: API for managing users, events, bookings, and attendance.
+
+servers:
+  - url: http://localhost:3000
+
+paths:
+
+  /users:
+    post:
+      summary: Create a new user
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '200':
+          description: User created successfully
+          content:
+            application/json:
+              example:
+                message: User created successfully
+                user_id: 1
+        '400':
+          description: Invalid input or duplicate email
+
+    get:
+      summary: Get all users
+      tags:
+        - Users
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              example:
+                - id: 1
+                  name: Shaurya
+                  email: shaurya@test.com
+
+  /users/{id}/bookings:
+    get:
+      summary: Get bookings for a specific user
+      tags:
+        - Users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of bookings
+
+  /events:
+    get:
+      summary: Get all upcoming events
+      tags:
+        - Events
+      responses:
+        '200':
+          description: List of events
+
+    post:
+      summary: Create a new event
+      tags:
+        - Events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventInput'
+      responses:
+        '200':
+          description: Event created successfully
+
+  /bookings:
+    post:
+      summary: Book tickets for an event
+      tags:
+        - Bookings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingInput'
+      responses:
+        '200':
+          description: Booking successful
+          content:
+            application/json:
+              example:
+                message: Booking successful
+                booking_code: "uuid-code"
+        '400':
+          description: Booking failed
+
+  /users/events/{id}/attendance:
+    post:
+      summary: Check attendance using booking code
+      tags:
+        - Attendance
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceInput'
+      responses:
+        '200':
+          description: Attendance verified
+          content:
+            application/json:
+              example:
+                tickets_booked: 2
+        '404':
+          description: Invalid booking code
+
+components:
+  schemas:
+
+    UserInput:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+          example: Shaurya
+        email:
+          type: string
+          example: shaurya@test.com
+
+    EventInput:
+      type: object
+      required:
+        - title
+        - date
+        - capacity
+      properties:
+        title:
+          type: string
+          example: Music Concert
+        description:
+          type: string
+          example: Live event
+        date:
+          type: string
+          format: date-time
+          example: 2026-04-01T18:00:00Z
+        capacity:
+          type: integer
+          example: 100
+
+    BookingInput:
+      type: object
+      required:
+        - user_id
+        - event_id
+        - tickets
+      properties:
+        user_id:
+          type: integer
+          example: 1
+        event_id:
+          type: integer
+          example: 1
+        tickets:
+          type: integer
+          example: 2
+
+    AttendanceInput:
+      type: object
+      required:
+        - booking_code
+      properties:
+        booking_code:
+          type: string
+          example: "uuid-code"
