@@ -56,6 +56,15 @@ npm install
 
 ---
 
+## Environment Variables
+
+Create a `.env` file in the root directory using the following:
+
+DB_HOST=localhost  
+DB_USER=root  
+DB_PASSWORD=your_password  
+DB_NAME=event_booking
+
 ### 3️⃣ Setup MySQL
 
 Make sure MySQL server is running.
@@ -101,6 +110,17 @@ Server will start at:
 http://localhost:3000
 
 ---
+
+## 🐳 Run with Docker
+
+Make sure Docker is installed.
+
+Run:
+
+docker-compose up --build
+
+API will be available at:
+http://localhost:3000
 
 ## 📘 API Documentation
 
