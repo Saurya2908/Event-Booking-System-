@@ -122,6 +122,8 @@ docker-compose up --build
 API will be available at:
 http://localhost:3000
 
+---
+
 ## 📘 API Documentation
 
 Swagger UI:
@@ -167,6 +169,14 @@ This prevents race conditions when multiple users book tickets simultaneously.
 Use:
 - Swagger UI
 - Postman Collection (included)
+
+---
+
+## 🚀 Deployment
+
+The application is deployed on Railway.
+
+Note: Railway may temporarily pause deployments due to platform issues or free-tier limits, but the application is fully functional and can be run locally using Docker.
 
 ---
 
