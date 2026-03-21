@@ -176,6 +176,8 @@ Use:
 
 The application is deployed on Railway.
 
+Link : [Click here](https://event-booking-system-production-4521.up.railway.app/api-docs)
+
 Note: Railway may temporarily pause deployments due to platform issues or free-tier limits, but the application is fully functional and can be run locally using Docker.
 
 ---
