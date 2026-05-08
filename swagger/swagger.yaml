@@ -1,17 +1,148 @@
 openapi: 3.0.0
 info:
   title: Event Booking System API
-  version: 1.0.0
-  description: API for managing users, events, bookings, and attendance.
+  version: 2.0.0
+  description: |
+    API for managing users, events, bookings, and attendance.
+    
+    **Features:**
+    - JWT Authentication (register/login)
+    - Input validation on all endpoints
+    - Rate limiting (100 req/15min global, 10 req/15min on auth)
+    - Transaction-safe ticket booking with row-level locking
+    - Duplicate email detection (409 Conflict)
 
 servers:
   - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: Registration and login (JWT)
+  - name: Users
+    description: User management
+  - name: Events
+    description: Event management
+  - name: Bookings
+    description: Ticket booking (transaction-safe)
+  - name: Attendance
+    description: Booking code validation
 
 paths:
 
+  # ─── Auth ──────────────────────────────────────────────
+
+  /auth/register:
+    post:
+      summary: Register a new user with password
+      description: |
+        Creates a new user account with a hashed password and returns a JWT token.
+        
+        **Validation rules:**
+        - `name`: 1–100 chars, letters/spaces/hyphens/apostrophes only
+        - `email`: Valid email format, max 100 chars, normalized to lowercase
+        - `password`: 6–100 characters
+        
+        **Rate limit:** 10 requests per 15 minutes
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterInput'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidEmail:
+                  summary: Invalid email
+                  value:
+                    error: "Invalid email format"
+                shortPassword:
+                  summary: Short password
+                  value:
+                    error: "Password must be at least 6 characters"
+                invalidName:
+                  summary: Invalid name
+                  value:
+                    error: "Name can only contain letters, spaces, hyphens, and apostrophes"
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitResponse'
+
+  /auth/login:
+    post:
+      summary: Login and receive JWT token
+      description: |
+        Authenticates a user with email and password, returns a JWT token valid for 24 hours.
+        
+        **Rate limit:** 10 requests per 15 minutes
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              example:
+                error: "Invalid email or password"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitResponse'
+
+  # ─── Users ─────────────────────────────────────────────
+
   /users:
     post:
-      summary: Create a new user
+      summary: Create a new user (without password)
+      description: |
+        Creates a user without authentication. For registration with password and JWT, use `/auth/register`.
+        
+        **Validation rules:**
+        - `name`: 1–100 chars, letters/spaces/hyphens/apostrophes only, HTML tags stripped
+        - `email`: Valid email format, max 100 chars, normalized to lowercase, must be unique
       tags:
         - Users
       requestBody:
@@ -26,10 +157,32 @@ paths:
           content:
             application/json:
               example:
-                message: User created successfully
-                user_id: 1
+                message: "User created successfully"
         '400':
-          description: Invalid input or duplicate email
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    error: "Invalid email format"
+                invalidName:
+                  summary: Name with special characters
+                  value:
+                    error: "Name can only contain letters, spaces, hyphens, and apostrophes"
+                nameTooLong:
+                  summary: Name exceeds limit
+                  value:
+                    error: "Name must be at most 100 characters"
+        '409':
+          description: Duplicate email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateErrorResponse'
 
     get:
       summary: Get all users
@@ -40,37 +193,72 @@ paths:
           description: List of users
           content:
             application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserOutput'
               example:
                 - id: 1
-                  name: Shaurya
-                  email: shaurya@test.com
+                  name: "Shaurya"
+                  email: "shaurya@test.com"
 
   /users/{id}/bookings:
     get:
       summary: Get bookings for a specific user
+      description: |
+        **Validation:** `id` must be a positive integer.
       tags:
         - Users
       parameters:
         - name: id
           in: path
           required: true
+          description: User ID (positive integer)
           schema:
             type: integer
+            minimum: 1
       responses:
         '200':
-          description: List of bookings
+          description: List of bookings for the user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingOutput'
+        '400':
+          description: Invalid user ID
+          content:
+            application/json:
+              example:
+                error: "User ID must be a positive integer"
+
+  # ─── Events ────────────────────────────────────────────
 
   /events:
     get:
       summary: Get all upcoming events
+      description: Returns only events with a date in the future.
       tags:
         - Events
       responses:
         '200':
-          description: List of events
+          description: List of upcoming events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventOutput'
 
     post:
       summary: Create a new event
+      description: |
+        **Validation rules:**
+        - `title`: Required, 1–255 chars, HTML tags stripped
+        - `description`: Optional, max 2000 chars
+        - `date`: Required, valid ISO 8601 date-time, **must be in the future**
+        - `capacity`: Required, positive integer, 1–100,000
       tags:
         - Events
       requestBody:
@@ -82,10 +270,50 @@ paths:
       responses:
         '200':
           description: Event created successfully
+          content:
+            application/json:
+              example:
+                message: "Event created successfully"
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                pastDate:
+                  summary: Event date in the past
+                  value:
+                    error: "Event date must be in the future"
+                invalidDate:
+                  summary: Invalid date format
+                  value:
+                    error: "Invalid date format. Use ISO 8601 format (e.g., 2026-12-25T18:00:00Z)"
+                zeroCapacity:
+                  summary: Zero or negative capacity
+                  value:
+                    error: "Capacity must be a positive integer"
+                tooLargeCapacity:
+                  summary: Capacity over limit
+                  value:
+                    error: "Capacity must be at most 100,000"
+                longDescription:
+                  summary: Description too long
+                  value:
+                    error: "Description must be at most 2000 characters"
+
+  # ─── Bookings ──────────────────────────────────────────
 
   /bookings:
     post:
-      summary: Book tickets for an event
+      summary: Book tickets for an event (transaction-safe)
+      description: |
+        Uses MySQL transactions with `SELECT ... FOR UPDATE` to prevent race conditions.
+        
+        **Validation rules:**
+        - `user_id`: Required, positive integer, must reference an existing user
+        - `event_id`: Required, positive integer, must reference an existing event
+        - `tickets`: Required, positive integer, 1–10 per booking
       tags:
         - Bookings
       requestBody:
@@ -99,23 +327,62 @@ paths:
           description: Booking successful
           content:
             application/json:
-              example:
-                message: Booking successful
-                booking_code: "uuid-code"
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
         '400':
-          description: Booking failed
+          description: Validation error or not enough tickets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUserId:
+                  summary: Non-integer user ID
+                  value:
+                    error: "User ID must be a positive integer"
+                tooManyTickets:
+                  summary: Exceeds per-booking limit
+                  value:
+                    error: "Cannot book more than 10 tickets at a time"
+                notEnough:
+                  summary: Insufficient tickets
+                  value:
+                    error: "Not enough tickets available"
+        '404':
+          description: User or event not found
+          content:
+            application/json:
+              examples:
+                userNotFound:
+                  summary: User does not exist
+                  value:
+                    error: "User not found"
+                eventNotFound:
+                  summary: Event does not exist
+                  value:
+                    error: "Event not found"
+
+  # ─── Attendance ────────────────────────────────────────
 
   /users/events/{id}/attendance:
     post:
-      summary: Check attendance using booking code
+      summary: Validate attendance using booking code
+      description: |
+        Checks if a booking code is valid for the specified event and returns the number of tickets booked.
+        
+        **Validation rules:**
+        - `id` (path): Must be a positive integer
+        - `booking_code` (body): Must be a valid UUID v4 format
       tags:
         - Attendance
       parameters:
         - name: id
           in: path
           required: true
+          description: Event ID (positive integer)
           schema:
             type: integer
+            minimum: 1
       requestBody:
         required: true
         content:
@@ -127,13 +394,112 @@ paths:
           description: Attendance verified
           content:
             application/json:
-              example:
-                tickets_booked: 2
+              schema:
+                $ref: '#/components/schemas/AttendanceResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidEventId:
+                  summary: Non-integer event ID
+                  value:
+                    error: "Event ID must be a positive integer"
+                invalidUUID:
+                  summary: Invalid booking code format
+                  value:
+                    error: "Booking code must be a valid UUID format"
         '404':
-          description: Invalid booking code
+          description: Invalid booking code for this event
+          content:
+            application/json:
+              example:
+                error: "Invalid booking code for this event"
+
+# ─── Components ──────────────────────────────────────────
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT token obtained from /auth/login or /auth/register"
+
   schemas:
+
+    # ─── Auth Schemas ──────────────────────────────────────
+
+    RegisterInput:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: "^[a-zA-Z\\s'-]+$"
+          example: "Shaurya"
+          description: "Letters, spaces, hyphens, and apostrophes only"
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          example: "shaurya@test.com"
+        password:
+          type: string
+          minLength: 6
+          maxLength: 100
+          format: password
+          example: "mySecurePass123"
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "User registered successfully"
+        user_id:
+          type: integer
+          example: 1
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+
+    LoginInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "shaurya@test.com"
+        password:
+          type: string
+          format: password
+          example: "mySecurePass123"
+
+    LoginResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Login successful"
+        user_id:
+          type: integer
+          example: 1
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+
+    # ─── User Schemas ──────────────────────────────────────
 
     UserInput:
       type: object
@@ -143,10 +509,31 @@ components:
       properties:
         name:
           type: string
-          example: Shaurya
+          minLength: 1
+          maxLength: 100
+          pattern: "^[a-zA-Z\\s'-]+$"
+          example: "Shaurya"
+          description: "Letters, spaces, hyphens, and apostrophes only"
         email:
           type: string
-          example: shaurya@test.com
+          format: email
+          maxLength: 100
+          example: "shaurya@test.com"
+
+    UserOutput:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Shaurya"
+        email:
+          type: string
+          example: "shaurya@test.com"
+
+    # ─── Event Schemas ─────────────────────────────────────
 
     EventInput:
       type: object
@@ -157,17 +544,51 @@ components:
       properties:
         title:
           type: string
-          example: Music Concert
+          minLength: 1
+          maxLength: 255
+          example: "Music Concert"
+          description: "HTML tags are automatically stripped"
         description:
           type: string
-          example: Live event
+          maxLength: 2000
+          example: "A live music event featuring top artists"
+          description: "Optional. Max 2000 characters."
         date:
           type: string
           format: date-time
-          example: 2026-04-01T18:00:00Z
+          example: "2026-12-25T18:00:00Z"
+          description: "Must be a future date in ISO 8601 format"
         capacity:
           type: integer
+          minimum: 1
+          maximum: 100000
           example: 100
+          description: "Total ticket capacity (1–100,000)"
+
+    EventOutput:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: "Music Concert"
+        description:
+          type: string
+          example: "A live music event"
+        date:
+          type: string
+          format: date-time
+          example: "2026-12-25T18:00:00Z"
+        total_capacity:
+          type: integer
+          example: 100
+        remaining_tickets:
+          type: integer
+          example: 98
+
+    # ─── Booking Schemas ───────────────────────────────────
 
     BookingInput:
       type: object
@@ -178,13 +599,53 @@ components:
       properties:
         user_id:
           type: integer
+          minimum: 1
+          example: 1
+        event_id:
+          type: integer
+          minimum: 1
+          example: 1
+        tickets:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 2
+          description: "Max 10 tickets per booking"
+
+    BookingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Booking successful"
+        booking_code:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    BookingOutput:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        user_id:
+          type: integer
           example: 1
         event_id:
           type: integer
           example: 1
+        booking_date:
+          type: string
+          format: date-time
+        booking_code:
+          type: string
+          format: uuid
         tickets:
           type: integer
           example: 2
+
+    # ─── Attendance Schemas ────────────────────────────────
 
     AttendanceInput:
       type: object
@@ -193,4 +654,39 @@ components:
       properties:
         booking_code:
           type: string
-          example: "uuid-code"
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+          description: "Must be a valid UUID v4 format"
+
+    AttendanceResponse:
+      type: object
+      properties:
+        tickets_booked:
+          type: integer
+          example: 2
+
+    # ─── Error Schemas ─────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Validation error message"
+
+    DuplicateErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Duplicate entry. This record already exists."
+        details:
+          type: string
+          example: "Duplicate value for field: email"
+
+    RateLimitResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Too many requests. Please try again after 15 minutes."
